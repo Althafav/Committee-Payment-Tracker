@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+}
+
+@theme {
+  --color-glass-bg: var(--glass-bg);
+}
+
+@layer base {
+  body {
+    @apply antialiased text-slate-900 bg-slate-50 relative overflow-x-hidden;
+    /* Add a subtle mesh gradient background */
+    background-image:
+      radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+      radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%),
+      radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
+    background-color: #0f172a;
+    /* Slate 900 fallback */
+    color: white;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply backdrop-blur-md bg-white/10 border border-white/20 shadow-xl rounded-2xl;
+  }
+
+  .glass-input {
+    @apply bg-white/5 border border-white/10 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all text-white placeholder-white/40;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-500 hover:bg-indigo-600 text-white font-medium px-6 py-2 rounded-lg transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95 cursor-pointer;
+  }
+
+  .btn-secondary {
+    @apply bg-white/10 hover:bg-white/20 text-white font-medium px-6 py-2 rounded-lg transition-all backdrop-blur-sm active:scale-95 cursor-pointer;
+  }
+}
