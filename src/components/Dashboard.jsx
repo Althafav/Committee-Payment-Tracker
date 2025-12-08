@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMembers } from '../context/MemberContext';
 import { calculatePendingAmount, processPayment } from '../logic/paymentCalculator';
-import { Plus, Search, Calendar, CreditCard, ChevronRight, User, Wallet, AlertCircle, Briefcase, Phone, MapPin, Building, BadgeCheck, Clock } from 'lucide-react';
-import { format } from 'date-fns';
+import { Plus, Search, Calendar, CreditCard, ChevronRight, User, Wallet, AlertCircle, Building, BadgeCheck, Phone } from 'lucide-react';
+import { format, startOfMonth, setYear, setMonth } from 'date-fns';
 
 export default function Dashboard() {
     const { members, addMember, addPayment } = useMembers();
@@ -46,7 +46,6 @@ export default function Dashboard() {
                     const balance = member.balance || 0;
                     const pending = calculatePendingAmount(member.paidUntil, balance);
                     const isOverdue = pending > 0;
-                    const hasLegacyDebt = balance < 0;
                     const isExecutive = member.is_executive;
 
                     return (
@@ -76,10 +75,11 @@ export default function Dashboard() {
                                     <p className="text-xs text-indigo-300 mb-1 flex items-center gap-1">
                                         <Calendar className="w-3 h-3" /> Paid Until
                                     </p>
-                                    <p className="font-semibold text-white">{format(new Date(member.paidUntil), 'dd MMM yyyy')}</p>
+                                    {/* Display only Month and Year */}
+                                    <p className="font-semibold text-white">{format(new Date(member.paidUntil), 'MMM yyyy')}</p>
                                 </div>
                                 <div>
-                                    <p className="text-xs text-indigo-300 mb-1">Net Pending</p>
+                                    <p className="text-xs text-indigo-300 mb-1">Total Pending</p>
                                     <p className={`font-bold text-xl ${isOverdue ? 'text-rose-400' : 'text-emerald-400'}`}>
                                         {pending} AED
                                     </p>
@@ -90,11 +90,10 @@ export default function Dashboard() {
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-2 text-indigo-200">
                                         <Wallet className="w-4 h-4" />
-                                        <span>Wallet:</span>
+                                        <span>Wallet Balance:</span>
                                     </div>
-                                    <span className={`font-bold ${hasLegacyDebt ? 'text-rose-300' : 'text-emerald-300'}`}>
+                                    <span className={`font-bold ${balance < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
                                         {balance} AED
-                                        {hasLegacyDebt && <span className="ml-1 text-xs font-normal opacity-70">(Debt)</span>}
                                     </span>
                                 </div>
 
@@ -144,6 +143,46 @@ export default function Dashboard() {
     );
 }
 
+// Reusable Month/Year Picker Component
+function MonthYearPicker({ label, date, onChange }) {
+    const currentDate = new Date(date);
+    const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    // Generate years from 2020 to 2030
+    const years = Array.from({ length: 11 }, (_, i) => 2020 + i);
+
+    return (
+        <div>
+            <label className="block text-sm text-indigo-200 mb-1">{label}</label>
+            <div className="flex gap-2">
+                <select
+                    className="glass-input w-2/3 bg-slate-800"
+                    value={currentDate.getMonth()}
+                    onChange={(e) => {
+                        const newDate = setMonth(currentDate, parseInt(e.target.value));
+                        onChange(newDate);
+                    }}
+                >
+                    {months.map((m, i) => <option key={m} value={i}>{m}</option>)}
+                </select>
+                <select
+                    className="glass-input w-1/3 bg-slate-800"
+                    value={currentDate.getFullYear()}
+                    onChange={(e) => {
+                        const newDate = setYear(currentDate, parseInt(e.target.value));
+                        onChange(newDate);
+                    }}
+                >
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+            </div>
+        </div>
+    );
+}
+
 function AddMemberModal({ onClose, onAdd }) {
     const [formData, setFormData] = useState({
         name: '',
@@ -154,9 +193,8 @@ function AddMemberModal({ onClose, onAdd }) {
         email: '',
         designation: '',
         isExecutive: false,
-        paidUntil: new Date().toISOString().split('T')[0],
-        membershipDate: new Date().toISOString().split('T')[0],
-        legacyDebt: '0'
+        paidUntil: startOfMonth(new Date()).toISOString(), // Default to 1st of current month
+        membershipDate: startOfMonth(new Date()).toISOString()
     });
 
     const emirates = ['Abu Dhabi', 'Dubai', 'Sharjah', 'Ajman', 'Umm Al Quwain', 'Ras Al Khaimah', 'Fujairah'];
@@ -169,17 +207,20 @@ function AddMemberModal({ onClose, onAdd }) {
         }));
     };
 
+    const handleDateChange = (field, newDate) => {
+        setFormData(prev => ({
+            ...prev,
+            [field]: newDate.toISOString()
+        }));
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!formData.name.trim()) return;
 
-        const debtAmount = parseInt(formData.legacyDebt) || 0;
-        const initialBalance = debtAmount > 0 ? -debtAmount : 0;
-
-        // Pass everything including membershipDate
         onAdd({
             ...formData,
-            balance: initialBalance
+            balance: 0 // Always 0 to start, removed outstanding amount
         });
         onClose();
     };
@@ -297,49 +338,25 @@ function AddMemberModal({ onClose, onAdd }) {
                         </div>
                     </div>
 
-                    {/* Dates & Payment Info Section */}
+                    {/* Dates Section - No Legacy Debt anymore */}
                     <div className="bg-white/5 p-4 rounded-lg border border-white/10 space-y-4">
-                        <h3 className="text-sm font-semibold text-emerald-300 uppercase tracking-wider">Dates & Status</h3>
+                        <h3 className="text-sm font-semibold text-emerald-300 uppercase tracking-wider">Membership Status</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm text-indigo-200 mb-1">Membership Date</label>
-                                <input
-                                    style={{ color: "white", colorScheme: "dark" }}
-                                    name="membershipDate"
-                                    type="date"
-                                    className="glass-input w-full"
-                                    value={formData.membershipDate}
-                                    onChange={handleChange}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm text-indigo-200 mb-1">Paid Until / Start Date</label>
-                                <input
-                                    style={{ color: "white", colorScheme: "dark" }}
-                                    name="paidUntil"
-                                    type="date"
-                                    className="glass-input w-full"
-                                    value={formData.paidUntil}
-                                    onChange={handleChange}
-                                />
-                            </div>
-                            <div className="md:col-span-2 pt-2 border-t border-white/5">
-                                <label className="block text-sm text-rose-200 mb-1 flex items-center gap-2">
-                                    <AlertCircle className="w-4 h-4" />
-                                    Outstanding Amount (Optional)
-                                </label>
-                                <input
-                                    name="legacyDebt"
-                                    type="number"
-                                    className="glass-input w-full border-rose-500/30 focus:border-rose-500"
-                                    placeholder="0"
-                                    value={formData.legacyDebt}
-                                    onChange={handleChange}
-                                    min="0"
-                                />
-                                <p className="text-xs text-rose-300/70 mt-1">Fees owed from before the current plan.</p>
-                            </div>
+                            <MonthYearPicker
+                                label="Membership Start Date"
+                                date={formData.membershipDate}
+                                onChange={(d) => handleDateChange('membershipDate', d)}
+                            />
+
+                            <MonthYearPicker
+                                label="Fees Paid Until (Start of Month)"
+                                date={formData.paidUntil}
+                                onChange={(d) => handleDateChange('paidUntil', d)}
+                            />
                         </div>
+                        <p className="text-xs text-indigo-300/60 italic">
+                            * Note: Fees are 10 AED/month until Feb 2025, and 15 AED/month from March 2025 onwards.
+                        </p>
                     </div>
 
                     <div className="flex gap-3 justify-end pt-4 border-t border-white/10">
@@ -361,14 +378,6 @@ function PaymentModal({ member, onClose, onPayment }) {
     const { newPaidUntil, newBalance } = processPayment(member.paidUntil, parseInt(amount) || 0, balance);
     const totalAvailable = (parseInt(amount) || 0) + balance;
 
-    // Logic for display:
-    const monthsAdded = Math.floor(calculateAvailableMonths(totalAvailable));
-
-    function calculateAvailableMonths(total) {
-        if (total < 0) return 0;
-        return Math.floor(total / 15);
-    }
-
     const handleSubmit = (e) => {
         e.preventDefault();
         const val = parseInt(amount);
@@ -386,8 +395,8 @@ function PaymentModal({ member, onClose, onPayment }) {
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="bg-white/5 p-4 rounded-lg border border-white/10 space-y-2">
                         <div className="flex justify-between text-sm">
-                            <span className="text-indigo-300">Current Paid Until:</span>
-                            <span className="text-white font-medium">{format(new Date(member.paidUntil), 'dd MMM yyyy')}</span>
+                            <span className="text-indigo-300">Paid Until:</span>
+                            <span className="text-white font-medium">{format(new Date(member.paidUntil), 'MMM yyyy')}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                             <span className="text-indigo-300">Total Pending:</span>
@@ -409,21 +418,18 @@ function PaymentModal({ member, onClose, onPayment }) {
                             min="1"
                         />
                         <p className="text-xs text-indigo-400 mt-2">
-                            {balance < 0 && totalAvailable < 0
-                                ? <span>Reduces debt to <span className="text-rose-300">{Math.abs(totalAvailable)} AED</span>. No date change.</span>
-                                : <span>Total: {totalAvailable} AED. Covers <span className="text-white font-bold">{monthsAdded}</span> months.</span>
-                            }
+                            Total Available with Wallet: <span className="text-white font-bold">{totalAvailable} AED</span>
                         </p>
                     </div>
 
                     <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-2">
                         <p className="text-sm text-emerald-200 flex items-center gap-2">
                             <ChevronRight className="w-4 h-4" />
-                            New Paid Until: <span className="font-bold text-white ml-auto">{format(newPaidUntil, 'dd MMM yyyy')}</span>
+                            New Paid Until: <span className="font-bold text-white ml-auto">{format(newPaidUntil, 'MMM yyyy')}</span>
                         </p>
                         <p className="text-sm text-emerald-200 flex items-center gap-2">
                             <Wallet className="w-4 h-4" />
-                            New Wallet Balance: <span className={`font-bold ml-auto ${newBalance < 0 ? 'text-rose-300' : 'text-white'}`}>{newBalance} AED</span>
+                            Remaining in Wallet: <span className={`font-bold ml-auto ${newBalance < 0 ? 'text-rose-300' : 'text-white'}`}>{newBalance} AED</span>
                         </p>
                     </div>
 

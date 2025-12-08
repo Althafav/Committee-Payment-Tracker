@@ -1,117 +1,73 @@
-import { addMonths, differenceInMonths, startOfDay, isBefore, addDays } from 'date-fns';
-
-const MONTHLY_FEE = 15;
-const DAILY_RATE = MONTHLY_FEE / 30;
+import { addMonths, startOfMonth, isBefore } from 'date-fns';
 
 /**
- * Calculates the total pending amount for a member.
- * Includes both monthly fees since "Paid Until" AND any legacy debt (negative balance).
- * @param {Date | string} paidUntil - The date up to which the member has paid.
- * @param {number} currentBalance - Current wallet balance (negative means debt).
- * @returns {number} The pending amount in AED.
+ * Determines the fee rate for a given month.
+ * 10 AED for Jan 2025 and Feb 2025 (and earlier).
+ * 15 AED from March 2025 onwards.
  */
-export function calculatePendingAmount(paidUntil, currentBalance = 0) {
-    const today = startOfDay(new Date());
-    const paidUntilDate = startOfDay(new Date(paidUntil));
+function getRateForMonth(date) {
+    const year = date.getFullYear();
+    const month = date.getMonth(); // 0-indexed (Jan=0, Feb=1, Mar=2)
 
-    let pending = 0;
+    // Before 2025: 10 AED
+    if (year < 2025) return 10;
 
-    // 1. Calculate fees for time passed
-    if (isBefore(paidUntilDate, today)) {
-        const monthsPending = differenceInMonths(today, paidUntilDate);
-        pending = Math.max(0, monthsPending * MONTHLY_FEE);
-    }
+    // In 2025, Jan (0) and Feb (1) are 10 AED.
+    if (year === 2025 && month < 2) return 10;
 
-    // 2. Add Legacy Debt (if balance is negative, it adds to pending)
-    if (currentBalance < 0) {
-        pending += Math.abs(currentBalance);
-    }
-
-    // Note: Positive balance doesn't reduce pending technically in this view, 
-    // it just means they have credit to pay it off. 
-    // But usually we want to show "Net Pending".
-    // For simplicity based on requirements: 
-    // If they have credit, it subtracts from what they owe.
-    if (currentBalance > 0) {
-        pending = Math.max(0, pending - currentBalance);
-    }
-
-    return pending;
+    // March 2025 onwards (including future years) is 15 AED.
+    return 15;
 }
 
 /**
- * Processes a payment using the wallet system.
- * Handles negative balances (debt) first.
- * @param {Date | string} currentPaidUntil - Current paid until date.
- * @param {number} amountPaid - Amount being paid now.
- * @param {number} currentBalance - Existing wallet balance.
- * @returns {Object} { newPaidUntil: Date, newBalance: number }
+ * Calculates total pending amount based on dynamic rates.
+ * Iterates month-by-month from paidUntil to current month.
  */
-export function processPayment(currentPaidUntil, amountPaid, currentBalance = 0) {
-    // 1. Add payment to balance (Paying off debt if negative)
-    let totalAvailable = currentBalance + amountPaid;
+export const calculatePendingAmount = (paidUntil, walletBalance = 0) => {
+    let current = startOfMonth(new Date(paidUntil));
+    const now = startOfMonth(new Date());
+    let totalPending = 0;
 
-    // 2. If after payment, balance is still negative or zero, 
-    // it means they only paid off debt (or part of it). Date doesn't move.
-    if (totalAvailable < MONTHLY_FEE && totalAvailable < 0) {
-        return {
-            newPaidUntil: new Date(currentPaidUntil),
-            newBalance: totalAvailable
-        };
+    // Iterate month by month from paidUntil up to Now
+    // We add a safety break to prevent infinite loops if dates are wild
+    let safetyCounter = 0;
+    while (isBefore(current, now) && safetyCounter < 1000) {
+        totalPending += getRateForMonth(current);
+        current = addMonths(current, 1);
+        safetyCounter++;
     }
 
-    // 3. If positive (or enough to cover months), calculate months/days to add
-    // We only use the POSITIVE portion for date advancement
-    // Logic: "Keep date moving"
+    // Apply wallet balance (credit reduces pending)
+    return Math.max(0, totalPending - walletBalance);
+};
 
-    // BUT: "Paid Until" is the anchor. 
-    // If totalAvailable is positive, we treat it as money to buy time.
+/**
+ * Process a payment and determine the new PaidUntil date and Wallet Balance.
+ * "Fills buckets" of months using their specific rates.
+ */
+export const processPayment = (currentPaidUntil, paymentAmount, currentBalance = 0) => {
+    let availableFunds = paymentAmount + currentBalance;
+    let newPaidUntil = startOfMonth(new Date(currentPaidUntil));
 
-    // Edge Case: If they were in debt (-50) and paid 100. Total = 50.
-    // They effectively bought 3.33 months starting from their CURRENT PaidUntil date.
+    // Safety break
+    let safetyCounter = 0;
 
-    // However, we need to ensure we don't double count. 
-    // The 'PaidUntil' date was set to 'Today' (or whenever) when they joined with debt.
-    // So yes, using the surplus to advance that date is correct.
+    // While we have enough funds to pay for the *next* month's specific rate
+    while (true && safetyCounter < 1000) {
+        const rate = getRateForMonth(newPaidUntil);
 
-    // Using Precise Calculation (Days) for remainders as per previous feature
-    const monthsToAdd = Math.floor(totalAvailable / MONTHLY_FEE);
-    const remainder = totalAvailable % MONTHLY_FEE;
-
-    // Convert remainder to days
-    // If remainder is negative (e.g. paying off debt creates 0 balance, handled above)
-    // If totalAvailable is positive but < 15, monthsToAdd is 0, remainder is totalAvailable.
-
-    let newPaidUntil = new Date(currentPaidUntil);
-
-    if (monthsToAdd > 0) {
-        newPaidUntil = addMonths(newPaidUntil, monthsToAdd);
-    }
-
-    if (remainder > 0) {
-        const daysToAdd = Math.floor(remainder / DAILY_RATE);
-        if (daysToAdd > 0) {
-            newPaidUntil = addDays(newPaidUntil, daysToAdd);
+        if (availableFunds >= rate) {
+            availableFunds -= rate;
+            newPaidUntil = addMonths(newPaidUntil, 1);
+        } else {
+            // Not enough for the full next month, stop here.
+            break;
         }
-        // Note: We used the remainder for days, so balance technically becomes 0?
-        // OR do we store it as credit?
-        // User chose "Wallet Balance" previously unless we switched everything to "Precise Dates".
-        // Let's stick to: Remainder IS Balance (Wallet), NOT Days.
-        // Wait, earlier (Step 229) we implemented "Precise Date", THEN (Step 264) switched to "Wallet".
-        // So Remainder should be BALANCE, not Days.
+        safetyCounter++;
     }
 
-    // Re-evaluating based on "Wallet System" decision in Step 264:
-    // "10 AED in Wallet".
-
-    // CORRECT LOGIC FOR WALLET SYSTEM:
-    const finalMonthsToAdd = Math.floor(totalAvailable / MONTHLY_FEE);
-    const finalBalance = totalAvailable % MONTHLY_FEE;
-
-    let finalDate = new Date(currentPaidUntil);
-    if (finalMonthsToAdd > 0) {
-        finalDate = addMonths(finalDate, finalMonthsToAdd);
-    }
-
-    return { newPaidUntil: finalDate, newBalance: finalBalance };
-}
+    return {
+        newPaidUntil: newPaidUntil, // Will be a Date object
+        newBalance: availableFunds // Remainder stays in wallet
+    };
+};
