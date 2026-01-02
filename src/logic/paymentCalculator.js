@@ -1,4 +1,4 @@
-import { addMonths, startOfMonth, isBefore } from 'date-fns';
+import { addMonths, startOfMonth, isAfter } from 'date-fns';
 
 /**
  * Determines the fee rate for a given month.
@@ -21,17 +21,17 @@ function getRateForMonth(date) {
 
 /**
  * Calculates total pending amount based on dynamic rates.
- * Iterates month-by-month from paidUntil to current month.
+ * Iterates month-by-month from the month AFTER paidUntil up to the CURRENT month (inclusive).
+ * "Paid Until: Jan 2025" means Jan is paid. We start charging from Feb.
  */
 export const calculatePendingAmount = (paidUntil, walletBalance = 0) => {
-    let current = startOfMonth(new Date(paidUntil));
+    let current = addMonths(startOfMonth(new Date(paidUntil)), 1);
     const now = startOfMonth(new Date());
     let totalPending = 0;
 
-    // Iterate month by month from paidUntil up to Now
-    // We add a safety break to prevent infinite loops if dates are wild
+    // Iterate month by month from (PaidUntil + 1) up to Now (inclusive)
     let safetyCounter = 0;
-    while (isBefore(current, now) && safetyCounter < 1000) {
+    while (!isAfter(current, now) && safetyCounter < 1000) {
         totalPending += getRateForMonth(current);
         current = addMonths(current, 1);
         safetyCounter++;
@@ -44,21 +44,22 @@ export const calculatePendingAmount = (paidUntil, walletBalance = 0) => {
 /**
  * Process a payment and determine the new PaidUntil date and Wallet Balance.
  * "Fills buckets" of months using their specific rates.
+ * PaidUntil represents the LAST paid month. We try to pay for the NEXT month.
  */
 export const processPayment = (currentPaidUntil, paymentAmount, currentBalance = 0) => {
     let availableFunds = paymentAmount + currentBalance;
     let newPaidUntil = startOfMonth(new Date(currentPaidUntil));
 
-    // Safety break
     let safetyCounter = 0;
 
-    // While we have enough funds to pay for the *next* month's specific rate
+    // Try to pay for the next month
     while (true && safetyCounter < 1000) {
-        const rate = getRateForMonth(newPaidUntil);
+        const nextMonth = addMonths(newPaidUntil, 1);
+        const rate = getRateForMonth(nextMonth);
 
         if (availableFunds >= rate) {
             availableFunds -= rate;
-            newPaidUntil = addMonths(newPaidUntil, 1);
+            newPaidUntil = nextMonth;
         } else {
             // Not enough for the full next month, stop here.
             break;

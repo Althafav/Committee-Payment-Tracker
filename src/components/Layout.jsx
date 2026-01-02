@@ -1,7 +1,10 @@
-import { LayoutDashboard, Users, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, LogOut } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
+    const { logout } = useAuth();
+
     return (
         <div className="min-h-screen flex flex-col">
             {/* Header */}
@@ -15,10 +18,14 @@ export default function Layout({ children }) {
                             Commitee Payment Tracker
                         </h1>
                     </div>
-                    {/* Simple Nav for now could be tabs later */}
-                    <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-indigo-100/80">
-                        {/* Placeholders for future nav */}
-                    </nav>
+
+                    <button
+                        onClick={logout}
+                        className="flex items-center gap-2 text-indigo-200 hover:text-white transition-colors text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-white/10"
+                    >
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
+                    </button>
                 </div>
             </header>
 

@@ -1,24 +1,34 @@
 import { useState } from 'react';
 import { useMembers } from '../context/MemberContext';
 import { calculatePendingAmount, processPayment } from '../logic/paymentCalculator';
-import { Plus, Search, Calendar, CreditCard, ChevronRight, User, Wallet, AlertCircle, Building, BadgeCheck, Phone } from 'lucide-react';
+import { Plus, Search, Calendar, CreditCard, ChevronRight, User, Wallet, AlertCircle, Building, BadgeCheck, Phone, History } from 'lucide-react';
 import { format, startOfMonth, setYear, setMonth } from 'date-fns';
+import MemberHistoryModal from './MemberHistoryModal';
+import AnalyticsSummary from './AnalyticsSummary';
 
 export default function Dashboard() {
     const { members, addMember, addPayment } = useMembers();
     const [searchTerm, setSearchTerm] = useState('');
     const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
     const [selectedMemberForPayment, setSelectedMemberForPayment] = useState(null);
+    const [selectedMemberForHistory, setSelectedMemberForHistory] = useState(null);
 
     // Derived state
     const filteredMembers = members.filter(m =>
         m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (m.mobile && m.mobile.includes(searchTerm)) ||
         (m.house_name && m.house_name.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    ).sort((a, b) => {
+        const pendingA = calculatePendingAmount(a.paidUntil, a.balance || 0);
+        const pendingB = calculatePendingAmount(b.paidUntil, b.balance || 0);
+        return pendingB - pendingA;
+    });
 
     return (
         <div className="space-y-6">
+            {/* Analytics */}
+            <AnalyticsSummary members={members} />
+
             {/* Stats / Actions */}
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
                 <div className="relative w-full md:w-96">
@@ -105,13 +115,23 @@ export default function Dashboard() {
                                 )}
                             </div>
 
-                            <button
-                                onClick={() => setSelectedMemberForPayment(member)}
-                                className="btn-secondary w-full flex items-center justify-center gap-2 mt-auto"
-                            >
-                                <CreditCard className="w-4 h-4" />
-                                Record Payment
-                            </button>
+                            <div className="flex gap-3 mt-auto pt-2">
+                                <button
+                                    onClick={() => setSelectedMemberForHistory(member)}
+                                    className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                                    title="View Payment History"
+                                >
+                                    <History className="w-4 h-4" />
+                                    <span>History</span>
+                                </button>
+                                <button
+                                    onClick={() => setSelectedMemberForPayment(member)}
+                                    className="btn-primary flex-[2] flex items-center justify-center gap-2"
+                                >
+                                    <CreditCard className="w-4 h-4" />
+                                    <span>Payment</span>
+                                </button>
+                            </div>
                         </div>
                     );
                 })}
@@ -137,6 +157,14 @@ export default function Dashboard() {
                     member={selectedMemberForPayment}
                     onClose={() => setSelectedMemberForPayment(null)}
                     onPayment={addPayment}
+                />
+            )}
+
+            {/* History Modal */}
+            {selectedMemberForHistory && (
+                <MemberHistoryModal
+                    member={selectedMemberForHistory}
+                    onClose={() => setSelectedMemberForHistory(null)}
                 />
             )}
         </div>
